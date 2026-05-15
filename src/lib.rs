@@ -14,12 +14,13 @@ mod category;
 pub use category::Category;
 mod index_type;
 pub use index_type::IndexType;
+pub(crate) mod macro_rules;
 mod platform;
 pub use platform::Platform;
 mod repository_type;
 pub use repository_type::RepositoryType;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseEnumError(String);
 
 impl ParseEnumError {

@@ -1,6 +1,8 @@
+use std::{error::Error, fmt::Display, num::ParseIntError, str::FromStr};
+
 use strum::{EnumString, FromRepr};
 
-use crate::ParseEnumError;
+use crate::{Category, ParseEnumError, Platform, RepositoryType};
 
 #[derive(
 	Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, FromRepr, strum::Display, EnumString,
@@ -25,21 +27,100 @@ impl From<IndexType> for physis::sqpack::IndexType {
 	}
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IndexInfo {
+	category: Category,
+	repository_type: RepositoryType,
+	chunk: u8,
+	platform: Platform,
+}
+
+impl Display for IndexInfo {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		let Self {
+			category,
+			repository_type,
+			chunk,
+			platform,
+		} = *self;
+		// ex4's `020409.<...>.index(2)` has the highest chunk number, so it is not apparent what base chunk is in (same for `repository_type`)
+		write!(
+			f,
+			"{category:02x}{repository_type:02x}{chunk:02x}.{platform}",
+			category = u8::from(category),
+			repository_type = u8::from(repository_type)
+		)
+	}
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, strum::Display)]
+pub enum ParseIndexInfoError {
+	#[strum(to_string = "Invalid format")]
+	InvalidFormat,
+	#[strum(to_string = "Invalid category")]
+	InvalidCategory,
+	#[strum(to_string = "Invalid part: {0}")]
+	InvalidInteger(ParseIntError),
+	#[strum(to_string = "Invalid part: {0}")]
+	InvalidPart(ParseEnumError),
+}
+
+impl From<ParseEnumError> for ParseIndexInfoError {
+	fn from(err: ParseEnumError) -> Self {
+		Self::InvalidPart(err)
+	}
+}
+
+impl From<ParseIntError> for ParseIndexInfoError {
+	fn from(err: ParseIntError) -> Self {
+		Self::InvalidInteger(err)
+	}
+}
+
+impl Error for ParseIndexInfoError {}
+
+impl FromStr for IndexInfo {
+	type Err = ParseIndexInfoError;
+
+	fn from_str(s: &str) -> Result<Self, Self::Err> {
+		let Some((index_name, platform)) = s.split_once('.') else {
+			return Err(ParseIndexInfoError::InvalidFormat);
+		};
+		if index_name.len() == 6
+			&& let (Some(category), Some(repository_type), Some(chunk)) =
+				(s.get(0..2), s.get(2..4), s.get(4..6))
+		{
+			let category = Category::from_repr(u8::from_str_radix(category, 16)?)
+				.ok_or(ParseIndexInfoError::InvalidCategory)?;
+			let repository_type = RepositoryType::from(u8::from_str_radix(repository_type, 16)?);
+			let chunk = u8::from_str_radix(chunk, 16)?;
+			let platform = platform.parse()?;
+			Ok(Self {
+				category,
+				repository_type,
+				chunk,
+				platform,
+			})
+		} else {
+			Err(ParseIndexInfoError::InvalidFormat)
+		}
+	}
+}
+
 #[cfg(test)]
 mod test {
-	use super::{IndexType, ParseEnumError};
+	use std::num::{IntErrorKind, NonZero};
 
-	macro_rules! display_fromstr_equivalence_check {
-		($str:literal, $enum:expr) => {
-			assert_eq!($enum.to_string(), $str);
-			assert_eq!($str.parse(), Ok($enum));
-		};
-	}
+	use super::{
+		Category, IndexInfo, IndexType, ParseEnumError, ParseIndexInfoError, Platform,
+		RepositoryType,
+	};
+	use crate::{assert_display_fromstr_equivalent, assert_parse_error_matches_expr};
 
 	#[test]
 	fn test_derived_display_and_fromstr() {
-		display_fromstr_equivalence_check!("index", IndexType::Index);
-		display_fromstr_equivalence_check!("index2", IndexType::Index2);
+		assert_display_fromstr_equivalent!("index", IndexType::Index);
+		assert_display_fromstr_equivalent!("index2", IndexType::Index2);
 	}
 
 	#[test]
@@ -55,6 +136,80 @@ mod test {
 		assert_eq!(
 			"index3".parse::<IndexType>(),
 			Err(ParseEnumError("index3".to_string()))
+		);
+	}
+
+	#[test]
+	fn test_parse_index_info() {
+		assert_display_fromstr_equivalent!(
+			"000000.win32",
+			IndexInfo {
+				category: Category::Common,
+				repository_type: RepositoryType::BaseGame,
+				chunk: 0,
+				platform: Platform::Win32
+			}
+		);
+		assert_display_fromstr_equivalent!(
+			"020105.win32",
+			IndexInfo {
+				category: Category::Bg,
+				repository_type: RepositoryType::Expansion {
+					number: NonZero::new(1).unwrap()
+				},
+				chunk: 5,
+				platform: Platform::Win32
+			}
+		);
+		assert_display_fromstr_equivalent!(
+			"0c0200.win32",
+			IndexInfo {
+				category: Category::Music,
+				repository_type: RepositoryType::Expansion {
+					number: NonZero::new(2).unwrap()
+				},
+				chunk: 0,
+				platform: Platform::Win32
+			}
+		);
+		assert_display_fromstr_equivalent!(
+			"020409.win32",
+			IndexInfo {
+				category: Category::Bg,
+				repository_type: RepositoryType::Expansion {
+					number: NonZero::new(4).unwrap()
+				},
+				chunk: 9,
+				platform: Platform::Win32
+			}
+		);
+	}
+
+	#[test]
+	fn test_parse_index_info_error() {
+		assert_eq!(
+			"AAAA".parse::<IndexInfo>(),
+			Err(ParseIndexInfoError::InvalidFormat)
+		);
+		assert_eq!(
+			"000.win32".parse::<IndexInfo>(),
+			Err(ParseIndexInfoError::InvalidFormat)
+		);
+		assert_eq!(
+			"0f0000.win32".parse::<IndexInfo>(),
+			Err(ParseIndexInfoError::InvalidCategory)
+		);
+		assert_parse_error_matches_expr!(
+			"02040z.win32"->IndexInfo,
+			ParseIndexInfoError::InvalidInteger(parse_int_error) => {
+				assert_eq!(*parse_int_error.kind(), IntErrorKind::InvalidDigit);
+			},
+		);
+		assert_parse_error_matches_expr!(
+			"020409.win3"->IndexInfo,
+			ParseIndexInfoError::InvalidPart(ParseEnumError(part)) => {
+				assert_eq!(part, "win3");
+			},
 		);
 	}
 }

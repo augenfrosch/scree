@@ -12,12 +12,18 @@ use crate::ParseEnumError;
 )]
 #[repr(u8)]
 pub enum Platform {
-	Win32 = 0x0,
-	Ps3 = 0x1,
-	Ps4 = 0x2,
-	Ps5 = 0x3,
+	Win32 = 0,
+	Ps3 = 1,
+	Ps4 = 2,
+	Ps5 = 3,
 	#[strum(serialize = "lys")]
-	Xbox = 0x4,
+	Xbox = 4,
+}
+
+impl From<Platform> for u8 {
+	fn from(platform: Platform) -> Self {
+		platform as u8
+	}
 }
 
 impl From<Platform> for physis::Platform {
@@ -35,21 +41,35 @@ impl From<Platform> for physis::Platform {
 #[cfg(test)]
 mod test {
 	use super::{ParseEnumError, Platform};
+	use crate::{assert_display_fromstr_equivalent, assert_fromrepr_reprfrom_equivalent};
 
-	macro_rules! display_fromstr_equivalence_check {
-		($str:literal, $enum:expr) => {
-			assert_eq!($enum.to_string(), $str);
-			assert_eq!($str.parse(), Ok($enum));
-		};
+	#[test]
+	fn test_fromrepr_reprfrom() {
+		assert_fromrepr_reprfrom_equivalent!((0, Platform::Win32): (u8, Platform));
+		assert_fromrepr_reprfrom_equivalent!((1, Platform::Ps3): (u8, Platform));
+		assert_fromrepr_reprfrom_equivalent!((2, Platform::Ps4): (u8, Platform));
+		assert_fromrepr_reprfrom_equivalent!((3, Platform::Ps5): (u8, Platform));
+		assert_fromrepr_reprfrom_equivalent!((4, Platform::Xbox): (u8, Platform));
+	}
+
+	#[test]
+	fn test_fromrepr_none() {
+		assert_eq!(Platform::from_repr(5), None);
+		assert_eq!(Platform::from_repr(5), None);
+		assert_eq!(Platform::from_repr(5), None);
+
+		assert_eq!(Platform::from_repr(122), None);
+
+		assert_eq!(Platform::from_repr(u8::MAX), None);
 	}
 
 	#[test]
 	fn test_derived_display_and_fromstr() {
-		display_fromstr_equivalence_check!("win32", Platform::Win32);
-		display_fromstr_equivalence_check!("ps3", Platform::Ps3);
-		display_fromstr_equivalence_check!("ps4", Platform::Ps4);
-		display_fromstr_equivalence_check!("ps5", Platform::Ps5);
-		display_fromstr_equivalence_check!("lys", Platform::Xbox);
+		assert_display_fromstr_equivalent!("win32", Platform::Win32);
+		assert_display_fromstr_equivalent!("ps3", Platform::Ps3);
+		assert_display_fromstr_equivalent!("ps4", Platform::Ps4);
+		assert_display_fromstr_equivalent!("ps5", Platform::Ps5);
+		assert_display_fromstr_equivalent!("lys", Platform::Xbox);
 	}
 
 	#[test]

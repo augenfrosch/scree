@@ -32,32 +32,63 @@ pub enum Category {
 	Debug = 0x13,
 }
 
+impl From<Category> for u8 {
+	fn from(category: Category) -> Self {
+		category as u8
+	}
+}
+
 #[cfg(test)]
 mod test {
 	use super::{Category, ParseEnumError};
+	use crate::{assert_display_fromstr_equivalent, assert_fromrepr_reprfrom_equivalent};
 
-	macro_rules! display_fromstr_equivalence_check {
-		($str:literal, $enum:expr) => {
-			assert_eq!($enum.to_string(), $str);
-			assert_eq!($str.parse(), Ok($enum));
-		};
+	#[test]
+	fn test_fromrepr_reprfrom() {
+		assert_fromrepr_reprfrom_equivalent!((0x00, Category::Common): (u8, Category));
+		assert_fromrepr_reprfrom_equivalent!((0x01, Category::Bgcommon): (u8, Category));
+		assert_fromrepr_reprfrom_equivalent!((0x02, Category::Bg): (u8, Category));
+		assert_fromrepr_reprfrom_equivalent!((0x03, Category::Cut): (u8, Category));
+		assert_fromrepr_reprfrom_equivalent!((0x04, Category::Chara): (u8, Category));
+		assert_fromrepr_reprfrom_equivalent!((0x05, Category::Shader): (u8, Category));
+		assert_fromrepr_reprfrom_equivalent!((0x06, Category::Ui): (u8, Category));
+		assert_fromrepr_reprfrom_equivalent!((0x07, Category::Sound): (u8, Category));
+		assert_fromrepr_reprfrom_equivalent!((0x08, Category::Vfx): (u8, Category));
+		assert_fromrepr_reprfrom_equivalent!((0x09, Category::UiScript): (u8, Category));
+		assert_fromrepr_reprfrom_equivalent!((0x0a, Category::Exd): (u8, Category));
+		assert_fromrepr_reprfrom_equivalent!((0x0b, Category::GameScript): (u8, Category));
+		assert_fromrepr_reprfrom_equivalent!((0x0c, Category::Music): (u8, Category));
+		assert_fromrepr_reprfrom_equivalent!((0x12, Category::SqpackTest): (u8, Category));
+		assert_fromrepr_reprfrom_equivalent!((0x13, Category::Debug): (u8, Category));
+	}
+
+	#[test]
+	fn test_fromrepr_none() {
+		assert_eq!(Category::from_repr(0x0d), None);
+		assert_eq!(Category::from_repr(0x0e), None);
+		assert_eq!(Category::from_repr(0x0f), None);
+		assert_eq!(Category::from_repr(0x10), None);
+		assert_eq!(Category::from_repr(0x11), None);
+
+		assert_eq!(Category::from_repr(0x14), None);
+		assert_eq!(Category::from_repr(0xff), None);
 	}
 
 	#[test]
 	fn test_derived_display_and_fromstr() {
-		display_fromstr_equivalence_check!("common", Category::Common);
-		display_fromstr_equivalence_check!("bgcommon", Category::Bgcommon);
-		display_fromstr_equivalence_check!("bg", Category::Bg);
-		display_fromstr_equivalence_check!("cut", Category::Cut);
-		display_fromstr_equivalence_check!("chara", Category::Chara);
-		display_fromstr_equivalence_check!("ui", Category::Ui);
-		display_fromstr_equivalence_check!("vfx", Category::Vfx);
-		display_fromstr_equivalence_check!("ui_script", Category::UiScript);
-		display_fromstr_equivalence_check!("exd", Category::Exd);
-		display_fromstr_equivalence_check!("game_script", Category::GameScript);
-		display_fromstr_equivalence_check!("music", Category::Music);
-		display_fromstr_equivalence_check!("_sqpack_test", Category::SqpackTest);
-		display_fromstr_equivalence_check!("_debug", Category::Debug);
+		assert_display_fromstr_equivalent!("common", Category::Common);
+		assert_display_fromstr_equivalent!("bgcommon", Category::Bgcommon);
+		assert_display_fromstr_equivalent!("bg", Category::Bg);
+		assert_display_fromstr_equivalent!("cut", Category::Cut);
+		assert_display_fromstr_equivalent!("chara", Category::Chara);
+		assert_display_fromstr_equivalent!("ui", Category::Ui);
+		assert_display_fromstr_equivalent!("vfx", Category::Vfx);
+		assert_display_fromstr_equivalent!("ui_script", Category::UiScript);
+		assert_display_fromstr_equivalent!("exd", Category::Exd);
+		assert_display_fromstr_equivalent!("game_script", Category::GameScript);
+		assert_display_fromstr_equivalent!("music", Category::Music);
+		assert_display_fromstr_equivalent!("_sqpack_test", Category::SqpackTest);
+		assert_display_fromstr_equivalent!("_debug", Category::Debug);
 	}
 
 	#[test]
