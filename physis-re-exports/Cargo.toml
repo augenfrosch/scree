@@ -1,0 +1,13 @@
+[package]
+name = "physis-re-exports"
+description = "Modifed version of a small portion of Physis (https://crates.io/crates/physis)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+binrw = { version = "0.15", features = ["std"], default-features = false }
+strum = { workspace = true }

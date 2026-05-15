@@ -1,11 +1,31 @@
+[workspace]
+members = [
+    "physis-re-exports",
+]
+resolver = "3"
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+license = "GPL-3.0-or-later"
+
+[workspace.lints]
+clippy.pedantic = "warn"
+
+[workspace.dependencies]
+physis-re-exports = { path = "./physis-re-exports" }
+
+strum = { version = "0.28", features = ["derive", "std"], default-features = false }
+
 [package]
 name = "scree"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
 
 [lints]
-clippy.pedantic = "warn"
+workspace = true
 
 [dependencies]
 physis = { version = "0.6" }
-strum = { version = "0.28" }
+strum = { workspace = true }
