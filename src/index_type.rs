@@ -1,4 +1,4 @@
-use std::{error::Error, fmt::Display, num::ParseIntError, str::FromStr};
+use std::{error::Error, fmt::Display, num::ParseIntError, path::Path, str::FromStr};
 
 use strum::{EnumString, FromRepr};
 
@@ -29,10 +29,10 @@ impl From<IndexType> for physis::sqpack::IndexType {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct IndexInfo {
-	category: Category,
-	repository_type: RepositoryType,
-	chunk: u8,
-	platform: Platform,
+	pub category: Category,
+	pub repository_type: RepositoryType,
+	pub chunk: u8,
+	pub platform: Platform,
 }
 
 impl Display for IndexInfo {
@@ -104,6 +104,48 @@ impl FromStr for IndexInfo {
 		} else {
 			Err(ParseIndexInfoError::InvalidFormat)
 		}
+	}
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, strum::Display)]
+pub enum IndexClassificationError {
+	#[strum(to_string = "Invalid path")]
+	InvalidPath,
+	// TODO: look into error messages; I very much doubt they are consistent and according to best practice
+	#[strum(to_string = "Invalid part: {0}")]
+	FailedToParseEnum(ParseEnumError),
+	#[strum(to_string = "Invalid part: {0}")]
+	FailedToParseIndexInfo(ParseIndexInfoError),
+}
+
+impl From<ParseEnumError> for IndexClassificationError {
+	fn from(err: ParseEnumError) -> Self {
+		Self::FailedToParseEnum(err)
+	}
+}
+
+impl From<ParseIndexInfoError> for IndexClassificationError {
+	fn from(err: ParseIndexInfoError) -> Self {
+		Self::FailedToParseIndexInfo(err)
+	}
+}
+
+impl Error for IndexClassificationError {}
+
+pub fn classify_index_path(
+	path: impl AsRef<Path>,
+) -> Result<(IndexInfo, IndexType), IndexClassificationError> {
+	let path = path.as_ref();
+	if let (Some(index_info), Some(index_type)) = (
+		path.file_stem().and_then(|file_stem| file_stem.to_str()),
+		path.extension().and_then(|extension| extension.to_str()),
+	) {
+		let index_info = index_info.parse()?;
+		let index_type = index_type.parse()?;
+
+		Ok((index_info, index_type))
+	} else {
+		Err(IndexClassificationError::InvalidPath)
 	}
 }
 

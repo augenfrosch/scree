@@ -30,3 +30,9 @@ impl<'a, T: Into<&'a str>> From<T> for AssetPath<'a> {
 		}
 	}
 }
+
+impl AsRef<str> for AssetPath<'_> {
+	fn as_ref(&self) -> &str {
+		self.inner
+	}
+}

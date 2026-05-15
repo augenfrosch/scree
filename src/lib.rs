@@ -2,23 +2,22 @@ use std::{
 	error::Error,
 	fmt::Display,
 	fs, io,
-	ops::{Index, IndexMut},
 	path::{Path, PathBuf},
 };
 
-use physis::sqpack::SqPackIndex;
+use physis::sqpack::{IndexEntry, SqPackIndex};
 
 mod asset_path;
 pub use asset_path::AssetPath;
 mod category;
 pub use category::Category;
 mod index_type;
-pub use index_type::IndexType;
+pub use index_type::{IndexClassificationError, IndexInfo, IndexType, classify_index_path};
 pub(crate) mod macro_rules;
 mod platform;
 pub use platform::Platform;
 mod repository_type;
-pub use repository_type::RepositoryType;
+pub use repository_type::{ParseRepositoryTypeError, RepositoryType};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseEnumError(String);
@@ -37,70 +36,108 @@ impl Display for ParseEnumError {
 
 impl Error for ParseEnumError {}
 
-#[derive(Debug, Clone, Copy)]
-pub struct IndexesKey {
-	pub category: Category,
-	pub index_type: IndexType,
+#[derive(Debug)]
+pub struct Index {
+	info: IndexInfo,
+	index: SqPackIndex,
+	index2: SqPackIndex,
 }
-
-impl From<IndexesKey> for usize {
-	fn from(key: IndexesKey) -> Self {
-		let offset = match key.index_type {
-			IndexType::Index => 0,
-			IndexType::Index2 => 1,
-		};
-		(key.category as usize) + INDEXES_MAP_SIZE * offset
-	}
-}
-
-const INDEXES_MAP_SIZE: usize = (Category::Debug as usize + 1) * 2;
 
 #[derive(Debug)]
-pub struct IndexesMap {
-	inner: [Vec<SqPackIndex>; INDEXES_MAP_SIZE * 2],
+pub struct IndexesEntry {
+	category: Category,
+	index_vec: Vec<Index>,
 }
 
-impl IndexesMap {
-	pub fn new() -> Self {
+impl IndexesEntry {
+	pub fn new(category: Category) -> Self {
 		Self {
-			inner: [const { Vec::new() }; INDEXES_MAP_SIZE * 2],
+			category,
+			index_vec: Vec::new(),
 		}
 	}
 }
 
-impl Index<IndexesKey> for IndexesMap {
-	type Output = Vec<SqPackIndex>;
-
-	fn index(&self, key: IndexesKey) -> &Self::Output {
-		&self.inner[usize::from(key)]
-	}
+#[derive(Debug)]
+pub struct Indexes {
+	inner: Vec<IndexesEntry>,
 }
 
-impl IndexMut<IndexesKey> for IndexesMap {
-	fn index_mut(&mut self, key: IndexesKey) -> &mut Self::Output {
-		&mut self.inner[usize::from(key)]
+impl Indexes {
+	pub fn new() -> Self {
+		Self { inner: Vec::new() }
+	}
+
+	pub fn get(&self, category: Category) -> Option<&[Index]> {
+		self.inner
+			.binary_search_by_key(&category, |entry| entry.category)
+			.map(|index| self.inner[index].index_vec.as_slice())
+			.ok()
+	}
+
+	pub fn get_mut_or_create_new(&mut self, category: Category) -> &mut Vec<Index> {
+		match self
+			.inner
+			.binary_search_by_key(&category, |entry| entry.category)
+		{
+			Ok(index) => &mut self.inner[index].index_vec,
+			Err(index) => {
+				self.inner.insert(index, IndexesEntry::new(category));
+				&mut self.inner[index].index_vec
+			},
+		}
 	}
 }
 
 #[derive(Debug)]
 pub struct Repository {
 	r#type: RepositoryType,
-	indexes: IndexesMap,
+	indexes: Indexes,
 }
 
-impl Repository {
-	pub fn new<P: AsRef<Path>>(path: P) -> io::Result<Option<Self>> {
-		let path = path.as_ref();
-		let Ok(repository_type) = path
-			.file_name()
-			.unwrap_or_default()
-			.to_string_lossy()
-			.parse()
-		else {
-			return Ok(None);
-		};
+#[derive(Debug, strum::Display)]
+pub enum LoadRepositoryError {
+	#[strum(to_string = "Failed to parse repository type: {0}")]
+	ParseRepositoryTypeError(ParseRepositoryTypeError),
+	#[strum(to_string = "IO error encountered: {0}")]
+	IoError(io::Error),
+	#[strum(to_string = r#"Mismatched number of files per index type"#)]
+	MismatchedNumberOfIndexFilesPerType,
+	#[strum(to_string = "Failed to classify index: {0}")]
+	IndexClassificationError(IndexClassificationError),
+	#[strum(to_string = "Failed to parse index file")]
+	ParseIndexFileError,
+}
 
-		let mut indexes = IndexesMap::new();
+impl From<ParseRepositoryTypeError> for LoadRepositoryError {
+	fn from(err: ParseRepositoryTypeError) -> Self {
+		Self::ParseRepositoryTypeError(err)
+	}
+}
+
+impl From<io::Error> for LoadRepositoryError {
+	fn from(err: io::Error) -> Self {
+		Self::IoError(err)
+	}
+}
+
+impl From<IndexClassificationError> for LoadRepositoryError {
+	fn from(err: IndexClassificationError) -> Self {
+		Self::IndexClassificationError(err)
+	}
+}
+
+impl Error for LoadRepositoryError {}
+
+impl Repository {
+	pub fn load(path: impl AsRef<Path>) -> Result<Self, LoadRepositoryError> {
+		let path = path.as_ref();
+		let repository_type = path
+			.file_name()
+			.and_then(|s| s.to_str())
+			.map(|s| s.parse())
+			.unwrap_or(Err(ParseRepositoryTypeError::IncorrectFormat))?;
+
 		let mut paths = fs::read_dir(path)?
 			.filter_map(|res| res.ok())
 			.map(|entry| entry.path())
@@ -112,39 +149,40 @@ impl Repository {
 			.collect::<Vec<_>>();
 		paths.sort();
 		dbg!(&paths);
-		for path in paths {
-			if let Some(filename) = path.file_name()
-				&& let Some(filename) = filename.to_str()
-				&& let Some((index_name, platform_index_type)) = filename.split_once('.')
-				&& let Some((platform, index_type)) = platform_index_type.split_once('.')
-				&& let Some(category) = index_name.get(..2)
-				&& let Ok(Some(category)) =
-					u8::from_str_radix(category, 16).map(Category::from_repr)
+		let (paths, remainder) = paths.as_chunks::<2>();
+		if remainder.len() != 0 {
+			return Err(LoadRepositoryError::MismatchedNumberOfIndexFilesPerType);
+		}
+		let mut indexes = Indexes::new();
+		for [index_path, index2_path] in paths {
+			let (index_info, index_type) = classify_index_path(index_path)?;
+			let (index2_info, index2_type) = classify_index_path(index2_path)?;
+			if !(index_type == IndexType::Index
+				&& index2_type == IndexType::Index2
+				&& index_info == index2_info)
 			{
-				let index_type = index_type
-					.parse::<IndexType>()
-					.expect(&format!("Unknown index type: {platform}"));
-				let platform = platform
-					.parse::<Platform>()
-					.expect(&format!("Unknown platform: {platform}"));
-
-				let index = SqPackIndex::from_existing(platform.into(), &path).expect(&format!(
-					"Failed to read index at {path}",
-					path = path.display()
-				));
-
-				let key = IndexesKey {
-					category,
-					index_type,
-				};
-				indexes[key].push(index);
+				return Err(LoadRepositoryError::MismatchedNumberOfIndexFilesPerType);
 			}
+
+			let platform = index_info.platform.into();
+			let index = SqPackIndex::from_existing(platform, &index_path)
+				.ok_or(LoadRepositoryError::ParseIndexFileError)?;
+			let index2 = SqPackIndex::from_existing(platform, &index2_path)
+				.ok_or(LoadRepositoryError::ParseIndexFileError)?;
+
+			let category = index_info.category;
+			let index = Index {
+				info: index_info,
+				index,
+				index2,
+			};
+			indexes.get_mut_or_create_new(category).push(index);
 		}
 
-		Ok(Some(Self {
+		Ok(Self {
 			r#type: repository_type,
 			indexes,
-		}))
+		})
 	}
 }
 
@@ -156,8 +194,36 @@ pub struct SqPackResources {
 	repositories: Vec<Repository>,
 }
 
-impl SqPackResources {
-	pub fn new(install_path: impl Into<PathBuf>) -> io::Result<Self> {
+#[derive(Debug, strum::Display)]
+pub enum LoadSqPackResourcesError {
+	#[strum(to_string = "IO error encountered: {0}")]
+	IoError(io::Error),
+	#[strum(to_string = "Failed to load repository: {0}")]
+	LoadRepositoryError(LoadRepositoryError),
+}
+
+impl From<io::Error> for LoadSqPackResourcesError {
+	fn from(err: io::Error) -> Self {
+		Self::IoError(err)
+	}
+}
+
+impl From<LoadRepositoryError> for LoadSqPackResourcesError {
+	fn from(err: LoadRepositoryError) -> Self {
+		Self::LoadRepositoryError(err)
+	}
+}
+
+impl Error for LoadSqPackResourcesError {}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FolderEntry {
+	pub files_offset: u32,
+	pub file_count: usize,
+}
+
+impl SqPackResources {	
+	pub fn load(install_path: impl Into<PathBuf>) -> Result<Self, LoadSqPackResourcesError> {
 		let mut game_directory = install_path.into();
 		if !game_directory.join("sqpack").is_dir() {
 			game_directory = game_directory.join("game");
@@ -178,15 +244,44 @@ impl SqPackResources {
 		paths.sort_by_key(|(repository_type, _path)| *repository_type);
 		dbg!(&paths);
 		for (_repository_type, path) in paths {
-			if let Some(repository) = Repository::new(path)? {
-				repositories.push(repository);
-			}
+			repositories.push(Repository::load(path)?);
 		}
-		// repositories.sort_by_key(|repository| repository.r#type);
 
 		Ok(Self {
 			game_directory,
 			repositories,
 		})
 	}
+
+	fn get_repository(&self, repository_type: RepositoryType) -> Option<&Repository> {
+		self.repositories.binary_search_by_key(&repository_type, |repository| repository.r#type).ok().map(|index| &self.repositories[index])
+	}
+
+	pub fn file_exists<'a>(&self, path: impl Into<AssetPath<'a>>) -> Option<IndexEntry> {
+		let asset_path = path.into();
+		let (category, repository_type) = asset_path.category_repository_type();
+		let category = category.ok()?;
+		self.get_repository(repository_type)?.indexes.get(category)?.iter().find_map(|index| {
+			let found = index.index.find_entry(asset_path.as_ref());
+			#[cfg(debug_assertions)]
+			if found.is_some() {
+				debug_assert!(index.index2.find_entry(asset_path.as_ref()).is_some())
+			}
+			found
+		})
+	}
+
+	// pub fn folder_exists<'a>(&self, path: impl Into<AssetPath<'a>>) -> Option<FolderEntry> {
+	// 	let asset_path = path.into();
+	// 	let (category, repository_type) = asset_path.category_repository_type();
+	// 	let category = category.ok()?;
+	// 	self.get_repository(repository_type)?.indexes.get(category)?.iter().find_map(|index| {
+	// 		let found = index.index.folder_entries.iter().find_map(|folder_entry| folder_entry.)
+	// 		#[cfg(debug_assertions)]
+	// 		if found.is_some() {
+	// 			debug_assert!(index.index2.find_entry(asset_path.as_ref()).is_some())
+	// 		}
+	// 		found
+	// 	})
+	// }
 }
