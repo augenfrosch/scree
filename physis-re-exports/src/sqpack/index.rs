@@ -55,16 +55,68 @@ pub struct SqPackIndexHeader {
 	sha1_hash: [u8; 20],
 }
 
-#[binrw]
-#[br(import(index_type: &IndexType))]
 #[derive(PartialEq, Debug, Clone, Copy)]
 #[repr(C)]
 pub enum Hash {
 	// TODO: on the PS3 these are flipped, but I don't have a good way to represent that yet...
-	#[br(pre_assert(*index_type == IndexType::Index1))]
+	// MAYBE: resolved now with the new changes. I don't have any files to test
 	SplitPath { name: u32, path: u32 },
-	#[br(pre_assert(*index_type == IndexType::Index2))]
 	FullPath(u32),
+}
+
+impl BinRead for Hash {
+	type Args<'a> = (&'a IndexType,);
+
+	fn read_options<R: Read + Seek>(
+		reader: &mut R,
+		endian: Endian,
+		args: Self::Args<'_>,
+	) -> BinResult<Self> {
+		let crc1 = <u32>::read_options(reader, endian, ())?;
+		match args.0 {
+			IndexType::Index1 => {
+				let crc2 = <u32>::read_options(reader, endian, ())?;
+				// CRCs are flipped on the PS3
+				match endian {
+					Endian::Big => Ok(Self::SplitPath {
+						name: crc2,
+						path: crc1,
+					}),
+					Endian::Little => Ok(Self::SplitPath {
+						name: crc1,
+						path: crc2,
+					}),
+				}
+			},
+			IndexType::Index2 => Ok(Self::FullPath(crc1)),
+		}
+	}
+}
+
+impl BinWrite for Hash {
+	type Args<'a> = ();
+
+	fn write_options<W: Write + Seek>(
+		&self,
+		writer: &mut W,
+		endian: Endian,
+		(): Self::Args<'_>,
+	) -> BinResult<()> {
+		match self {
+			// CRCs are flipped on the PS3
+			Hash::SplitPath { name, path } => match endian {
+				Endian::Big => {
+					path.write_options(writer, endian, ())?;
+					name.write_options(writer, endian, ())
+				},
+				Endian::Little => {
+					name.write_options(writer, endian, ())?;
+					path.write_options(writer, endian, ())
+				},
+			},
+			Hash::FullPath(crc) => crc.write_options(writer, endian, ()),
+		}
+	}
 }
 
 #[derive(Debug, Clone)]
@@ -222,29 +274,18 @@ impl SqPackIndex {
 	}
 
 	/// Calculates a hash for `index` files from a game path.
-	pub fn calculate_hash(&self, path: &str) -> Hash {
+	pub fn calculate_hash(index_type: IndexType, path: &str) -> Hash {
 		let lowercase = path.to_lowercase();
 
-		match &self.index_header.index_type {
+		match index_type {
 			IndexType::Index1 => {
 				if let Some(pos) = lowercase.rfind('/') {
 					let (directory, filename) = lowercase.split_at(pos);
 
-					let directory_crc = checksum(directory.as_bytes());
-					let filename_crc = checksum(&filename.as_bytes()[1..filename.len()]);
+					let path = checksum(directory.as_bytes());
+					let name = checksum(&filename.as_bytes()[1..]);
 
-					if self.sqpack_header.platform.endianness() == Endian::Big {
-						// NOTE: see Hash documentation for why this is needed!
-						Hash::SplitPath {
-							name: directory_crc,
-							path: filename_crc,
-						}
-					} else {
-						Hash::SplitPath {
-							name: filename_crc,
-							path: directory_crc,
-						}
-					}
+					Hash::SplitPath { name, path }
 				} else {
 					// TODO: is this ever hit?
 					panic!("This is unexpected, why is the file sitting outside of a folder?");
@@ -255,12 +296,12 @@ impl SqPackIndex {
 	}
 
 	pub fn exists(&self, path: &str) -> bool {
-		let hash = self.calculate_hash(path);
+		let hash = Self::calculate_hash(self.index_header.index_type, path);
 		self.entries.iter().any(|s| s.hash == hash)
 	}
 
 	pub fn find_entry(&self, path: &str) -> Option<IndexEntry> {
-		let hash = self.calculate_hash(path);
+		let hash = Self::calculate_hash(self.index_header.index_type, path);
 		self.find_entry_from_hash(hash)
 	}
 
