@@ -6,7 +6,7 @@ use binrw::binrw;
 use crate::common::Platform;
 
 mod index;
-pub use index::{Hash, IndexEntry, IndexType, SqPackIndex};
+pub use index::{FolderEntryInfo, Hash, IndexEntry, IndexType, SqPackIndex};
 
 /// The type of this SqPack file.
 #[binrw]

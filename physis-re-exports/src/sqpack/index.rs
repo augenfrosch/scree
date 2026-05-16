@@ -139,17 +139,46 @@ pub struct DataEntry {
 #[binrw]
 #[derive(Debug, Clone)]
 pub struct FolderEntry {
-	hash: u32,
-	files_offset: u32,
+	pub hash: u32,
+	pub files_offset: u32,
 	// Divide by 0x10 to get the number of files
 	#[brw(pad_after = 4)]
-	total_files_size: u32,
+	pub total_files_size: u32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct IndexEntry {
 	pub data_file_id: u8,
 	pub offset: u64,
+}
+
+#[derive(Debug)]
+pub struct FolderEntryInfo {
+	pub files_starting_index: usize,
+	pub file_count: usize,
+}
+
+impl FolderEntryInfo {
+	pub fn new(index: &SqPackIndex, folder_entry: &FolderEntry) -> Self {
+		const FILE_ENTRY_SIZE: usize = 0x10;
+		let files_starting_index = usize::try_from(
+			folder_entry
+				.files_offset
+				.checked_sub(index.index_header.file_descriptor.offset)
+				.expect(&format!(
+					"malformed index: base offset ({offset}) is greater than folder's files offset ({files_offset})",
+					offset = index.index_header.file_descriptor.offset,
+					files_offset = folder_entry.files_offset
+				)),
+		)
+		.expect("16-bit D:")
+			/ FILE_ENTRY_SIZE;
+		Self {
+			files_starting_index,
+			file_count: usize::try_from(folder_entry.total_files_size).expect("16-bit :(")
+				/ FILE_ENTRY_SIZE,
+		}
+	}
 }
 
 #[binrw]
@@ -235,6 +264,16 @@ impl SqPackIndex {
 		self.find_entry_from_hash(hash)
 	}
 
+	pub fn find_folder_entry(&self, path: &str) -> Option<FolderEntryInfo> {
+		let path = if path.ends_with('/') {
+			&path[..path.len() - 1]
+		} else {
+			path
+		};
+		let hash = checksum(path.as_bytes());
+		self.find_folder_entry_info_from_hash(hash)
+	}
+
 	pub fn find_entry_from_hash(&self, hash: Hash) -> Option<IndexEntry> {
 		if let Some(entry) = self.entries.iter().find(|s| s.hash == hash) {
 			return Some(IndexEntry {
@@ -244,6 +283,13 @@ impl SqPackIndex {
 		}
 
 		None
+	}
+
+	pub fn find_folder_entry_info_from_hash(&self, hash: u32) -> Option<FolderEntryInfo> {
+		self.folder_entries
+			.iter()
+			.find(|s| s.hash == hash)
+			.map(|entry| FolderEntryInfo::new(self, entry))
 	}
 
 	pub fn find_entry_from_offset(&self, offset: u64) -> Option<Hash> {
