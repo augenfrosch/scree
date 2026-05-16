@@ -40,7 +40,7 @@ impl Error for ParseEnumError {}
 pub struct Index {
 	_info: IndexInfo,
 	index: SqPackIndex,
-	index2: SqPackIndex,
+	_index2: SqPackIndex,
 }
 
 #[derive(Debug)]
@@ -107,6 +107,8 @@ pub enum LoadRepositoryError {
 	IndexClassificationError(IndexClassificationError),
 	#[strum(to_string = "Failed to parse index file")]
 	ParseIndexFileError,
+	#[strum(to_string = "Parsed indexes' entries are not sorted by their hash")]
+	IndexEntriesNotSorted,
 }
 
 impl From<ParseRepositoryTypeError> for LoadRepositoryError {
@@ -148,7 +150,7 @@ impl Repository {
 			})
 			.collect::<Vec<_>>();
 		paths.sort();
-		// dbg!(&paths);
+
 		let (paths, remainder) = paths.as_chunks::<2>();
 		if remainder.len() != 0 {
 			return Err(LoadRepositoryError::MismatchedNumberOfIndexFilesPerType);
@@ -169,12 +171,25 @@ impl Repository {
 				.ok_or(LoadRepositoryError::ParseIndexFileError)?;
 			let index2 = SqPackIndex::from_existing(platform, &index2_path)
 				.ok_or(LoadRepositoryError::ParseIndexFileError)?;
+			if !index.entries.is_sorted_by_key(|entry| match entry.hash {
+				physis_re_exports::sqpack::Hash::SplitPath { name, path } => (path, name),
+				physis_re_exports::sqpack::Hash::FullPath(_) => unreachable!(
+					"Malformed index, indexes of type `.index` must not have full-path hashes"
+				),
+			}) || !index2.entries.is_sorted_by_key(|entry| match entry.hash {
+				physis_re_exports::sqpack::Hash::SplitPath { .. } => unreachable!(
+					"Malformed index, indexes of type `.index2` must not have split-path hashes"
+				),
+				physis_re_exports::sqpack::Hash::FullPath(hash) => hash,
+			}) {
+				return Err(LoadRepositoryError::IndexEntriesNotSorted);
+			}
 
 			let category = index_info.category;
 			let index = Index {
 				_info: index_info,
 				index,
-				index2,
+				_index2: index2,
 			};
 			indexes.get_mut_or_create_new(category).push(index);
 		}
@@ -236,7 +251,7 @@ impl SqPackResources {
 			})
 			.collect::<Vec<_>>();
 		paths.sort_by_key(|(repository_type, _path)| *repository_type);
-		// dbg!(&paths);
+
 		for (_repository_type, path) in paths {
 			repositories.push(Repository::load(path)?);
 		}
@@ -258,42 +273,31 @@ impl SqPackResources {
 		let asset_path = path.into();
 		let (category, repository_type) = asset_path.category_repository_type();
 		let category = category.ok()?;
-		// dbg!(category, repository_type);
 		self.get_repository(repository_type)?
 			.indexes
 			.get(category)?
 			.iter()
 			.find_map(|index| {
-				// dbg!(index.index.entries.len(), index.index2.entries.len());
 				let found = index.index.find_entry(asset_path.as_ref());
-				debug_assert!(index.index.entries.iter().is_sorted_by_key(
-					|entry| match entry.hash {
-						physis_re_exports::sqpack::Hash::SplitPath { name, path } => (path, name),
-						physis_re_exports::sqpack::Hash::FullPath(_) => unreachable!(),
-					}
-				));
-				debug_assert!(index.index2.entries.iter().is_sorted_by_key(
-					|entry| match entry.hash {
-						physis_re_exports::sqpack::Hash::SplitPath { .. } => unreachable!(),
-						physis_re_exports::sqpack::Hash::FullPath(hash) => hash,
-					}
-				));
+
 				// TODO: Look into this. The assertion seems to not hold (which would explain why ironworks & Physis iterate over all of them, I think)
-				// But the number of entries in the `.index2`s seems to be consistently much lower than the corresponding `.index` (which is close to what ResLogger2 has in the `CurrentPathList`)
+				// But the number of entries in the `.index2`s seems to be consistently much lower than the corresponding `.index`
+				// (which is close to what ResLogger2 has in the `CurrentPathList`).
 				// #[cfg(debug_assertions)]
 				// if found.is_some() {
 				// 	debug_assert_eq!(found, index.index2.find_entry(asset_path.as_ref()))
 				// }
-				#[cfg(debug_assertions)]
-				if let Some(found) = &found
-					&& let Some(found2) = &index.index2.find_entry(asset_path.as_ref())
-					&& found != found2
-				{
-					eprintln!(
-						r#"Assertion for path="{path}" failed: {found:?} != {found2:?}"#,
-						path = asset_path.as_ref()
-					);
-				}
+				// #[cfg(debug_assertions)]
+				// if let Some(found) = &found
+				// 	&& let Some(found2) = &index.index2.find_entry(asset_path.as_ref())
+				// 	&& found != found2
+				// {
+				// 	eprintln!(
+				// 		r#"Assertion for path="{path}" failed: {found:?} != {found2:?}"#,
+				// 		path = asset_path.as_ref()
+				// 	);
+				// }
+
 				found
 			})
 	}
@@ -302,46 +306,22 @@ impl SqPackResources {
 		let asset_path = path.into();
 		let (category, repository_type) = asset_path.category_repository_type();
 		let category = category.ok()?;
-		// dbg!(hash);
+
 		self.get_repository(repository_type)?
 			.indexes
 			.get(category)?
 			.iter()
 			.find_map(|index| {
-				// dbg!(
-				// 	index.index.folder_entries.len(),
-				// 	index.index2.folder_entries.len()
-				// );
 				let found = index.index.find_folder_entry(asset_path.as_ref());
-				debug_assert!(
-					index
-						.index
-						.folder_entries
-						.iter()
-						.is_sorted_by_key(|folder_entry| folder_entry.hash)
-				);
-				#[cfg(debug_assertions)]
-				if let Some(found) = &found {
-					let hash = SqPackIndex::calculate_partial_hash(asset_path.as_ref());
-					let starting_index = found.files_starting_index;
-					let end_index = starting_index + found.file_count;
-					index.index.entries[starting_index..end_index]
-						.iter()
-						.for_each(|entry| match entry.hash {
-							physis_re_exports::sqpack::Hash::SplitPath { path, .. } => {
-								debug_assert_eq!(path, hash)
-							},
-							physis_re_exports::sqpack::Hash::FullPath(_) => unreachable!(),
-						})
-				}
-				// dbg!(found);
+
 				// See above TODO; `index2.folder_entries` seems to be empty
 				// which does seem to make sense since it looks like the entries point to a continuous range of file entries for the folder
-				// and the entries are sorted by their hash (which would make them non-contiguous for `.index2` files)
+				// and the entries are sorted by their hash (which would make them non-contiguous for `.index2` files).
 				// #[cfg(debug_assertions)]
 				// if found.is_some() {
 				// 	debug_assert!(index.index2.find_folder_entry(asset_path.as_ref()).is_some())
 				// }
+
 				found
 			})
 	}
