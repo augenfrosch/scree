@@ -265,12 +265,14 @@ impl SqPackIndex {
 	}
 
 	pub fn find_folder_entry(&self, path: &str) -> Option<FolderEntryInfo> {
+		// Stripping a terminating '/' might not be "correct", but it does make the function more fogiving.
+		// MAYBE: remove this, if performace becomes a concern.
 		let path = if path.ends_with('/') {
 			&path[..path.len() - 1]
 		} else {
 			path
 		};
-		let hash = checksum(path.as_bytes());
+		let hash = Self::calculate_partial_hash(path);
 		self.find_folder_entry_info_from_hash(hash)
 	}
 
