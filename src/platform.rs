@@ -1,3 +1,4 @@
+use physis_re_exports::common::Platform as PhysisPlatform;
 use strum::{EnumString, FromRepr};
 
 use crate::ParseEnumError;
@@ -26,14 +27,14 @@ impl From<Platform> for u8 {
 	}
 }
 
-impl From<Platform> for physis::Platform {
+impl From<Platform> for PhysisPlatform {
 	fn from(platform: Platform) -> Self {
 		match platform {
-			Platform::Win32 => physis::Platform::Win32,
-			Platform::Ps3 => physis::Platform::PS3,
-			Platform::Ps4 => physis::Platform::PS4,
-			Platform::Ps5 => physis::Platform::PS5,
-			Platform::Xbox => physis::Platform::Xbox,
+			Platform::Win32 => PhysisPlatform::Win32,
+			Platform::Ps3 => PhysisPlatform::PS3,
+			Platform::Ps4 => PhysisPlatform::PS4,
+			Platform::Ps5 => PhysisPlatform::PS5,
+			Platform::Xbox => PhysisPlatform::Xbox,
 		}
 	}
 }

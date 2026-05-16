@@ -5,7 +5,7 @@ use std::{
 	path::{Path, PathBuf},
 };
 
-use physis::sqpack::{IndexEntry, SqPackIndex};
+use physis_re_exports::sqpack::{IndexEntry, SqPackIndex};
 
 mod asset_path;
 pub use asset_path::AssetPath;

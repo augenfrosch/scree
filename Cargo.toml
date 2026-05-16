@@ -27,5 +27,5 @@ license.workspace = true
 workspace = true
 
 [dependencies]
-physis = { version = "0.6" }
+physis-re-exports = { workspace = true }
 strum = { workspace = true }

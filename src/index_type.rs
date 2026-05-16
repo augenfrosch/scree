@@ -1,5 +1,6 @@
 use std::{error::Error, fmt::Display, num::ParseIntError, path::Path, str::FromStr};
 
+use physis_re_exports::sqpack::IndexType as PhysisIndexType;
 use strum::{EnumString, FromRepr};
 
 use crate::{Category, ParseEnumError, Platform, RepositoryType};
@@ -18,11 +19,11 @@ pub enum IndexType {
 	Index2 = 0x2,
 }
 
-impl From<IndexType> for physis::sqpack::IndexType {
+impl From<IndexType> for PhysisIndexType {
 	fn from(index_type: IndexType) -> Self {
 		match index_type {
-			IndexType::Index => physis::sqpack::IndexType::Index1,
-			IndexType::Index2 => physis::sqpack::IndexType::Index2,
+			IndexType::Index => PhysisIndexType::Index1,
+			IndexType::Index2 => PhysisIndexType::Index2,
 		}
 	}
 }
