@@ -21,19 +21,6 @@ pub enum Platform {
 }
 
 impl Platform {
-	/// Returns the short-hand codename for this platform.
-	///
-	/// For example, `Platform::Win32` becomes "win32".
-	pub fn shortname(&self) -> &'static str {
-		match self {
-			Platform::Win32 => "win32",
-			Platform::PS3 => "ps3",
-			Platform::PS4 => "ps4",
-			Platform::PS5 => "ps5",
-			Platform::Xbox => "lys",
-		}
-	}
-
 	/// Returns the endianness for this platform.
 	pub(crate) fn endianness(&self) -> Endian {
 		match self {

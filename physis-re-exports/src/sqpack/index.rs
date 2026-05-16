@@ -30,15 +30,6 @@ pub enum IndexType {
 	Index2 = 2,
 }
 
-impl IndexType {
-	pub fn file_extension(&self) -> &'static str {
-		match self {
-			IndexType::Index1 => "index",
-			IndexType::Index2 => "index2",
-		}
-	}
-}
-
 #[binrw]
 #[derive(Debug, Clone)]
 pub struct SqPackIndexHeader {
