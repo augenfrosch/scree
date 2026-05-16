@@ -14,7 +14,7 @@ fn main() -> Result<(), LoadSqPackResourcesError> {
 			// res.folder_exists(line.as_str().trim_end_matches('/')).unwrap();
 			println!(
 				"{line}: {exists:?}",
-				exists = res.folder_exists(line.as_str().trim_end_matches('/'))
+				exists = res.folder_exists(line.as_str())
 			);
 		} else {
 			// res.file_exists(line.as_str()).unwrap();

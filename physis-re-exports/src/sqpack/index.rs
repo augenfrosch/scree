@@ -191,9 +191,11 @@ pub struct DataEntry {
 #[binrw]
 #[derive(Debug, Clone)]
 pub struct FolderEntry {
+	// Hash of the full folder/directory path. Matches the `Hash::SplitPath` variant's `path` field
 	pub hash: u32,
+	// Offset into the index file to a `total_files_size` bytes long section containing `FileEntry`s that are in the  folder
 	pub files_offset: u32,
-	// Divide by 0x10 to get the number of files
+	// Divide by 0x10 (the size of a `FileEntry` for `IndexType::Index1`, I think) to get the number of files
 	#[brw(pad_after = 4)]
 	pub total_files_size: u32,
 }
@@ -202,6 +204,20 @@ pub struct FolderEntry {
 pub struct IndexEntry {
 	pub data_file_id: u8,
 	pub offset: u64,
+}
+
+impl From<&FileEntry> for IndexEntry {
+	fn from(entry: &FileEntry) -> Self {
+		let FileEntryData {
+			is_synonym: _,
+			data_file_id,
+			offset,
+		} = entry.data;
+		Self {
+			data_file_id,
+			offset,
+		}
+	}
 }
 
 #[derive(Debug)]
@@ -318,14 +334,10 @@ impl SqPackIndex {
 	}
 
 	pub fn find_entry_from_hash(&self, hash: Hash) -> Option<IndexEntry> {
-		if let Some(entry) = self.entries.iter().find(|s| s.hash == hash) {
-			return Some(IndexEntry {
-				data_file_id: entry.data.data_file_id,
-				offset: entry.data.offset,
-			});
-		}
-
-		None
+		self.entries
+			.iter()
+			.find(|s| s.hash == hash)
+			.map(IndexEntry::from)
 	}
 
 	pub fn find_folder_entry_info_from_hash(&self, hash: u32) -> Option<FolderEntryInfo> {

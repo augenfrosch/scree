@@ -5,7 +5,7 @@ use std::{
 	path::{Path, PathBuf},
 };
 
-use physis_re_exports::sqpack::{FolderEntryInfo, IndexEntry, SqPackIndex};
+use physis_re_exports::sqpack::{FolderEntryInfo, Hash, IndexEntry, SqPackIndex};
 
 mod asset_path;
 pub use asset_path::AssetPath;
@@ -273,12 +273,38 @@ impl SqPackResources {
 		let asset_path = path.into();
 		let (category, repository_type) = asset_path.category_repository_type();
 		let category = category.ok()?;
+
+		let Hash::SplitPath {
+			name: filename_crc,
+			path: directory_crc,
+		} = SqPackIndex::calculate_hash(
+			physis_re_exports::sqpack::IndexType::Index1,
+			asset_path.as_ref(),
+		)
+		else {
+			unreachable!(
+				"`SqPackIndex::calculate_hash` should always return a split-path hash for `IndexType::Index1`"
+			)
+		};
+
 		self.get_repository(repository_type)?
 			.indexes
 			.get(category)?
 			.iter()
 			.find_map(|index| {
-				let found = index.index.find_entry(asset_path.as_ref());
+				index
+					.index
+					.entries
+					.binary_search_by(|entry| match entry.hash {
+						Hash::SplitPath { name, path } => {
+							(path, name).cmp(&(directory_crc, filename_crc))
+						},
+						Hash::FullPath(_) => unreachable!(
+							"Full-path hash in `.index` file (This should have been caught while loading)"
+						),
+					})
+					.ok()
+					.map(|idx| IndexEntry::from(&index.index.entries[idx]))
 
 				// TODO: Look into this. The assertion seems to not hold (which would explain why ironworks & Physis iterate over all of them, I think)
 				// But the number of entries in the `.index2`s seems to be consistently much lower than the corresponding `.index`
@@ -297,8 +323,6 @@ impl SqPackResources {
 				// 		path = asset_path.as_ref()
 				// 	);
 				// }
-
-				found
 			})
 	}
 
@@ -307,12 +331,25 @@ impl SqPackResources {
 		let (category, repository_type) = asset_path.category_repository_type();
 		let category = category.ok()?;
 
+		// This is currently partially copy-paste from `index.rs`; TODO: look into somehow consolidating this
+		let path = if asset_path.ends_with('/') {
+			&asset_path[..asset_path.len() - 1]
+		} else {
+			&asset_path
+		};
+		let hash = SqPackIndex::calculate_partial_hash(path);
+
 		self.get_repository(repository_type)?
 			.indexes
 			.get(category)?
 			.iter()
 			.find_map(|index| {
-				let found = index.index.find_folder_entry(asset_path.as_ref());
+				index
+					.index
+					.folder_entries
+					.binary_search_by_key(&hash, |folder_entry| folder_entry.hash)
+					.ok()
+					.map(|idx| FolderEntryInfo::new(&index.index, &index.index.folder_entries[idx]))
 
 				// See above TODO; `index2.folder_entries` seems to be empty
 				// which does seem to make sense since it looks like the entries point to a continuous range of file entries for the folder
@@ -321,8 +358,6 @@ impl SqPackResources {
 				// if found.is_some() {
 				// 	debug_assert!(index.index2.find_folder_entry(asset_path.as_ref()).is_some())
 				// }
-
-				found
 			})
 	}
 }
