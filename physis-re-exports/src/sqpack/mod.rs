@@ -13,36 +13,36 @@ pub use index::{Hash, IndexEntry, IndexType, SqPackIndex};
 #[brw(repr = u32)]
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum SqPackFileType {
-    /// FFXIV Explorer says "SQDB", whatever that is.
-    Sqdb = 0x0,
-    /// Dat files.
-    Data = 0x1,
-    /// Index/Index2 files.
-    Index = 0x2,
+	/// FFXIV Explorer says "SQDB", whatever that is.
+	Sqdb = 0x0,
+	/// Dat files.
+	Data = 0x1,
+	/// Index/Index2 files.
+	Index = 0x2,
 }
 
 #[binrw]
 #[brw(magic = b"SqPack\0\0")]
 #[derive(Debug, Clone)]
 pub(crate) struct SqPackHeader {
-    #[brw(pad_size_to = 4)]
-    platform: Platform,
-    /// The size of this header in bytes.
-    pub size: u32,
-    /// Have only seen version 1.
-    version: u32,
-    file_type: SqPackFileType,
+	#[brw(pad_size_to = 4)]
+	platform: Platform,
+	/// The size of this header in bytes.
+	pub size: u32,
+	/// Have only seen version 1.
+	version: u32,
+	file_type: SqPackFileType,
 
-    // TODO: some unknown value, zeroed out for index files
-    // XivAlexandar says date/time, where does that come from?
-    unk1: u32,
-    unk2: u32,
+	// TODO: some unknown value, zeroed out for index files
+	// XivAlexandar says date/time, where does that come from?
+	unk1: u32,
+	unk2: u32,
 
-    // TODO: this is possibly region, but CN users reported this as 0 so maybe not?
-    region: u8,
+	// TODO: this is possibly region, but CN users reported this as 0 so maybe not?
+	region: u8,
 
-    #[brw(pad_before = 924)]
-    #[brw(pad_after = 44)]
-    /// The SHA1 of the bytes immediately before this.
-    sha1_hash: [u8; 20],
+	#[brw(pad_before = 924)]
+	#[brw(pad_after = 44)]
+	/// The SHA1 of the bytes immediately before this.
+	sha1_hash: [u8; 20],
 }

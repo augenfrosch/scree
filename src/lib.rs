@@ -222,7 +222,7 @@ pub struct FolderEntry {
 	pub file_count: usize,
 }
 
-impl SqPackResources {	
+impl SqPackResources {
 	pub fn load(install_path: impl Into<PathBuf>) -> Result<Self, LoadSqPackResourcesError> {
 		let mut game_directory = install_path.into();
 		if !game_directory.join("sqpack").is_dir() {
@@ -254,21 +254,28 @@ impl SqPackResources {
 	}
 
 	fn get_repository(&self, repository_type: RepositoryType) -> Option<&Repository> {
-		self.repositories.binary_search_by_key(&repository_type, |repository| repository.r#type).ok().map(|index| &self.repositories[index])
+		self.repositories
+			.binary_search_by_key(&repository_type, |repository| repository.r#type)
+			.ok()
+			.map(|index| &self.repositories[index])
 	}
 
 	pub fn file_exists<'a>(&self, path: impl Into<AssetPath<'a>>) -> Option<IndexEntry> {
 		let asset_path = path.into();
 		let (category, repository_type) = asset_path.category_repository_type();
 		let category = category.ok()?;
-		self.get_repository(repository_type)?.indexes.get(category)?.iter().find_map(|index| {
-			let found = index.index.find_entry(asset_path.as_ref());
-			#[cfg(debug_assertions)]
-			if found.is_some() {
-				debug_assert!(index.index2.find_entry(asset_path.as_ref()).is_some())
-			}
-			found
-		})
+		self.get_repository(repository_type)?
+			.indexes
+			.get(category)?
+			.iter()
+			.find_map(|index| {
+				let found = index.index.find_entry(asset_path.as_ref());
+				#[cfg(debug_assertions)]
+				if found.is_some() {
+					debug_assert!(index.index2.find_entry(asset_path.as_ref()).is_some())
+				}
+				found
+			})
 	}
 
 	// pub fn folder_exists<'a>(&self, path: impl Into<AssetPath<'a>>) -> Option<FolderEntry> {
