@@ -8,7 +8,7 @@ use std::{
 
 use binrw::{BinRead, BinResult, BinWrite, Endian, Error, binrw};
 
-use crate::{common::Platform, crc::Jamcrc, sqpack::SqPackHeader};
+use crate::{common::Platform, crc::checksum, sqpack::SqPackHeader};
 
 #[binrw]
 #[derive(Debug, Clone)]
@@ -176,8 +176,6 @@ pub struct SqPackIndex {
 	pub folder_entries: Vec<FolderEntry>,
 }
 
-const CRC: Jamcrc = Jamcrc::new();
-
 impl SqPackIndex {
 	/// Creates a new reference to an existing index file.
 	pub fn from_existing(platform: Platform, path: &Path) -> Option<Self> {
@@ -191,7 +189,7 @@ impl SqPackIndex {
 	pub fn calculate_partial_hash(path: &str) -> u32 {
 		let lowercase = path.to_lowercase();
 
-		CRC.checksum(lowercase.as_bytes())
+		checksum(lowercase.as_bytes())
 	}
 
 	/// Calculates a hash for `index` files from a game path.
@@ -203,8 +201,8 @@ impl SqPackIndex {
 				if let Some(pos) = lowercase.rfind('/') {
 					let (directory, filename) = lowercase.split_at(pos);
 
-					let directory_crc = CRC.checksum(directory.as_bytes());
-					let filename_crc = CRC.checksum(&filename.as_bytes()[1..filename.len()]);
+					let directory_crc = checksum(directory.as_bytes());
+					let filename_crc = checksum(&filename.as_bytes()[1..filename.len()]);
 
 					if self.sqpack_header.platform.endianness() == Endian::Big {
 						// NOTE: see Hash documentation for why this is needed!
@@ -223,7 +221,7 @@ impl SqPackIndex {
 					panic!("This is unexpected, why is the file sitting outside of a folder?");
 				}
 			},
-			IndexType::Index2 => Hash::FullPath(CRC.checksum(lowercase.as_bytes())),
+			IndexType::Index2 => Hash::FullPath(checksum(lowercase.as_bytes())),
 		}
 	}
 
