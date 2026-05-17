@@ -3,6 +3,7 @@ name = "physis-re-exports"
 description = "Modifed version of a small portion of Physis (https://crates.io/crates/physis)"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 
 [lints]
