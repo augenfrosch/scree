@@ -7,10 +7,15 @@ pub struct AssetPath<'a> {
 }
 
 impl AssetPath<'_> {
+	/// Determines the [`Category`] of the asset as indicated by its path.
+	///
+	/// # Errors
+	/// Returns a [`ParseEnumError`] if the substring does not indicate a valid category.
 	pub fn category(&self) -> Result<Category, ParseEnumError> {
 		self.category_repository_type().0
 	}
 
+	#[must_use]
 	pub fn repository_type(&self) -> RepositoryType {
 		self.category_repository_type().1
 	}

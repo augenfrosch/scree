@@ -23,6 +23,7 @@ pub use repository_type::{ParseRepositoryTypeError, RepositoryType};
 pub struct ParseEnumError(String);
 
 impl ParseEnumError {
+	#[must_use]
 	pub fn new(s: &str) -> Self {
 		ParseEnumError(s.to_string())
 	}
@@ -39,7 +40,7 @@ impl Error for ParseEnumError {}
 #[derive(Debug)]
 pub struct Index {
 	_info: IndexInfo,
-	index: SqPackIndex,
+	index1: SqPackIndex,
 	_index2: SqPackIndex,
 }
 
@@ -50,6 +51,7 @@ pub struct IndexesEntry {
 }
 
 impl IndexesEntry {
+	#[must_use]
 	pub fn new(category: Category) -> Self {
 		Self {
 			category,
@@ -58,16 +60,18 @@ impl IndexesEntry {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Indexes {
 	inner: Vec<IndexesEntry>,
 }
 
 impl Indexes {
+	#[must_use]
 	pub fn new() -> Self {
 		Self { inner: Vec::new() }
 	}
 
+	#[must_use]
 	pub fn get(&self, category: Category) -> Option<&[Index]> {
 		self.inner
 			.binary_search_by_key(&category, |entry| entry.category)
@@ -101,7 +105,7 @@ pub enum LoadRepositoryError {
 	ParseRepositoryTypeError(ParseRepositoryTypeError),
 	#[strum(to_string = "IO error encountered: {0}")]
 	IoError(io::Error),
-	#[strum(to_string = r#"Mismatched number of files per index type"#)]
+	#[strum(to_string = r"Mismatched number of files per index type")]
 	MismatchedNumberOfIndexFilesPerType,
 	#[strum(to_string = "Failed to classify index: {0}")]
 	IndexClassificationError(IndexClassificationError),
@@ -132,16 +136,20 @@ impl From<IndexClassificationError> for LoadRepositoryError {
 impl Error for LoadRepositoryError {}
 
 impl Repository {
+	// Same as TODO below, I need to write actual documentation
+	/// Loads the repository from the directory at `path`.
+	///
+	/// # Errors
+	/// Returns a [`LoadRepositoryError`] if encountering an IO error or when parsing of resources fails.
 	pub fn load(path: impl AsRef<Path>) -> Result<Self, LoadRepositoryError> {
 		let path = path.as_ref();
 		let repository_type = path
 			.file_name()
 			.and_then(|s| s.to_str())
-			.map(|s| s.parse())
-			.unwrap_or(Err(ParseRepositoryTypeError::IncorrectFormat))?;
+			.map_or(Err(ParseRepositoryTypeError::IncorrectFormat), str::parse)?;
 
 		let mut paths = fs::read_dir(path)?
-			.filter_map(|res| res.ok())
+			.filter_map(Result::ok)
 			.map(|entry| entry.path())
 			.filter(|path| {
 				path.extension()
@@ -152,24 +160,24 @@ impl Repository {
 		paths.sort();
 
 		let (paths, remainder) = paths.as_chunks::<2>();
-		if remainder.len() != 0 {
+		if !remainder.is_empty() {
 			return Err(LoadRepositoryError::MismatchedNumberOfIndexFilesPerType);
 		}
 		let mut indexes = Indexes::new();
-		for [index_path, index2_path] in paths {
-			let (index_info, index_type) = classify_index_path(index_path)?;
+		for [index1_path, index2_path] in paths {
+			let (index1_info, index1_type) = classify_index_path(index1_path)?;
 			let (index2_info, index2_type) = classify_index_path(index2_path)?;
-			if !(index_type == IndexType::Index
+			if !(index1_type == IndexType::Index
 				&& index2_type == IndexType::Index2
-				&& index_info == index2_info)
+				&& index1_info == index2_info)
 			{
 				return Err(LoadRepositoryError::MismatchedNumberOfIndexFilesPerType);
 			}
 
-			let platform = index_info.platform.into();
-			let index = SqPackIndex::from_existing(platform, &index_path)
+			let platform = index1_info.platform.into();
+			let index = SqPackIndex::from_existing(platform, index1_path)
 				.ok_or(LoadRepositoryError::ParseIndexFileError)?;
-			let index2 = SqPackIndex::from_existing(platform, &index2_path)
+			let index2 = SqPackIndex::from_existing(platform, index2_path)
 				.ok_or(LoadRepositoryError::ParseIndexFileError)?;
 			if !index.entries.is_sorted_by_key(|entry| match entry.hash {
 				physis_re_exports::sqpack::Hash::SplitPath { name, path } => (path, name),
@@ -185,10 +193,10 @@ impl Repository {
 				return Err(LoadRepositoryError::IndexEntriesNotSorted);
 			}
 
-			let category = index_info.category;
+			let category = index1_info.category;
 			let index = Index {
-				_info: index_info,
-				index,
+				_info: index1_info,
+				index1: index,
 				_index2: index2,
 			};
 			indexes.get_mut_or_create_new(category).push(index);
@@ -205,7 +213,7 @@ impl Repository {
 pub struct SqPackResources {
 	/// The `game` directory / the directory containing the `sqpack` folder
 	_game_directory: PathBuf,
-	/// The "repositories" SqPack files exist for, contained in subfolders in the `sqpack` folder
+	/// The "repositories" `SqPack` files exist for, contained in subfolders in the `sqpack` folder
 	repositories: Vec<Repository>,
 }
 
@@ -232,6 +240,11 @@ impl From<LoadRepositoryError> for LoadSqPackResourcesError {
 impl Error for LoadSqPackResourcesError {}
 
 impl SqPackResources {
+	// TODO: write actual documentation
+	/// Loads all repositories found within the `install_path` directory.
+	///
+	/// # Errors
+	/// Returns a [`LoadSqPackResourcesError`] when encountering an IO error or loading a repository fails fails.
 	pub fn load(install_path: impl Into<PathBuf>) -> Result<Self, LoadSqPackResourcesError> {
 		let mut game_directory = install_path.into();
 		if !game_directory.join("sqpack").is_dir() {
@@ -240,8 +253,7 @@ impl SqPackResources {
 
 		let mut repositories = Vec::new();
 		let mut paths = fs::read_dir(game_directory.join("sqpack"))?
-			.into_iter()
-			.filter_map(|res| res.ok())
+			.filter_map(Result::ok)
 			.map(|entry| entry.path())
 			.filter_map(|path| {
 				path.file_name()
@@ -293,7 +305,7 @@ impl SqPackResources {
 			.iter()
 			.find_map(|index| {
 				index
-					.index
+					.index1
 					.entries
 					.binary_search_by(|entry| match entry.hash {
 						Hash::SplitPath { name, path } => {
@@ -304,7 +316,7 @@ impl SqPackResources {
 						),
 					})
 					.ok()
-					.map(|idx| IndexEntry::from(&index.index.entries[idx]))
+					.map(|idx| IndexEntry::from(&index.index1.entries[idx]))
 
 				// TODO: Look into this. The assertion seems to not hold (which would explain why ironworks & Physis iterate over all of them, I think)
 				// But the number of entries in the `.index2`s seems to be consistently much lower than the corresponding `.index`
@@ -332,8 +344,8 @@ impl SqPackResources {
 		let category = category.ok()?;
 
 		// This is currently partially copy-paste from `index.rs`; TODO: look into somehow consolidating this
-		let path = if asset_path.ends_with('/') {
-			&asset_path[..asset_path.len() - 1]
+		let path = if let Some(path) = asset_path.strip_suffix('/') {
+			path
 		} else {
 			&asset_path
 		};
@@ -345,11 +357,13 @@ impl SqPackResources {
 			.iter()
 			.find_map(|index| {
 				index
-					.index
+					.index1
 					.folder_entries
 					.binary_search_by_key(&hash, |folder_entry| folder_entry.hash)
 					.ok()
-					.map(|idx| FolderEntryInfo::new(&index.index, &index.index.folder_entries[idx]))
+					.map(|idx| {
+						FolderEntryInfo::new(&index.index1, &index.index1.folder_entries[idx])
+					})
 
 				// See above TODO; `index2.folder_entries` seems to be empty
 				// which does seem to make sense since it looks like the entries point to a continuous range of file entries for the folder

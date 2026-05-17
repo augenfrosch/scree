@@ -22,7 +22,7 @@ pub enum Platform {
 
 impl Platform {
 	/// Returns the endianness for this platform.
-	pub(crate) fn endianness(&self) -> Endian {
+	pub(crate) fn endianness(self) -> Endian {
 		match self {
 			Platform::PS3 => Endian::Big,
 			_ => Endian::Little,

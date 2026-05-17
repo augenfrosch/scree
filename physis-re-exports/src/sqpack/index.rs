@@ -137,13 +137,13 @@ impl BinRead for FileEntryData {
 		let mut data = <u32>::read_options(reader, endian, ())?;
 		if endian == Endian::Big {
 			// Taken from Lumina, fixes reading from PS3 somehow?
-			data = (data << 4) | ((data & 0x70000000) >> 27) | ((data & 0x80000000) >> 31);
+			data = (data << 4) | ((data & 0x7000_0000) >> 27) | ((data & 0x8000_0000) >> 31);
 		}
 
 		Ok(Self {
 			is_synonym: (data & 0b1) == 0b1,
 			data_file_id: ((data & 0b1110) >> 1) as u8,
-			offset: (data & !0xF) as u64 * 0x08,
+			offset: u64::from(data & !0xF) * 0x08,
 		})
 	}
 }
@@ -158,6 +158,8 @@ impl BinWrite for FileEntryData {
 		(): Self::Args<'_>,
 	) -> Result<(), Error> {
 		// TODO: support synonym and data_file_id
+		// TODO(augenfrosch): look into why this cast is used here
+		#[expect(clippy::cast_possible_truncation)]
 		let data: u32 = self.offset.wrapping_div(0x08) as u32;
 
 		// TODO: support big endian?
@@ -227,17 +229,23 @@ pub struct FolderEntryInfo {
 }
 
 impl FolderEntryInfo {
+	#[must_use]
+	/// Creates a new [`FolderEntryInfo`] based on a [`FolderEntry`] and the [`SqPackIndex`] it is contained in.
+	///
+	/// # Panics
+	/// Panics if the offset indicated by the [`SqPackIndex`] is larger than the [`FolderEntry`]'s offset
+	/// or when creating an [`usize`] from an [`u32`] fails on 16-bit targets.
 	pub fn new(index: &SqPackIndex, folder_entry: &FolderEntry) -> Self {
 		const FILE_ENTRY_SIZE: usize = 0x10;
 		let files_starting_index = usize::try_from(
 			folder_entry
 				.files_offset
 				.checked_sub(index.index_header.file_descriptor.offset)
-				.expect(&format!(
+				.unwrap_or_else(|| panic!(
 					"malformed index: base offset ({offset}) is greater than folder's files offset ({files_offset})",
 					offset = index.index_header.file_descriptor.offset,
 					files_offset = folder_entry.files_offset
-				)),
+				))
 		)
 		.expect("16-bit D:")
 			/ FILE_ENTRY_SIZE;
@@ -275,6 +283,7 @@ pub struct SqPackIndex {
 
 impl SqPackIndex {
 	/// Creates a new reference to an existing index file.
+	#[must_use]
 	pub fn from_existing(platform: Platform, path: &Path) -> Option<Self> {
 		// Index files are individually small, so we can easily load them entirely to memory.
 		// Our current index-reading code uses seeking, and that's *very* slow when reading from a disk.
@@ -283,6 +292,7 @@ impl SqPackIndex {
 	}
 
 	/// Calculates a partial hash for a given path
+	#[must_use]
 	pub fn calculate_partial_hash(path: &str) -> u32 {
 		let lowercase = path.to_lowercase();
 
@@ -290,42 +300,46 @@ impl SqPackIndex {
 	}
 
 	/// Calculates a hash for `index` files from a game path.
+	#[must_use]
 	pub fn calculate_hash(index_type: IndexType, path: &str) -> Hash {
 		let lowercase = path.to_lowercase();
 
 		match index_type {
 			IndexType::Index1 => {
-				if let Some(pos) = lowercase.rfind('/') {
-					let (directory, filename) = lowercase.split_at(pos);
-
+				if let Some((directory, filename)) = lowercase.rsplit_once('/') {
 					let path = checksum(directory.as_bytes());
-					let name = checksum(&filename.as_bytes()[1..]);
+					let name = checksum(filename.as_bytes());
 
 					Hash::SplitPath { name, path }
 				} else {
-					// TODO: is this ever hit?
-					panic!("This is unexpected, why is the file sitting outside of a folder?");
+					let path = checksum(lowercase.as_bytes());
+					let name = checksum(&[]);
+
+					Hash::SplitPath { name, path }
 				}
 			},
 			IndexType::Index2 => Hash::FullPath(checksum(lowercase.as_bytes())),
 		}
 	}
 
+	#[must_use]
 	pub fn exists(&self, path: &str) -> bool {
 		let hash = Self::calculate_hash(self.index_header.index_type, path);
 		self.entries.iter().any(|s| s.hash == hash)
 	}
 
+	#[must_use]
 	pub fn find_entry(&self, path: &str) -> Option<IndexEntry> {
 		let hash = Self::calculate_hash(self.index_header.index_type, path);
 		self.find_entry_from_hash(hash)
 	}
 
+	#[must_use]
 	pub fn find_folder_entry(&self, path: &str) -> Option<FolderEntryInfo> {
 		// Stripping a terminating '/' might not be "correct", but it does make the function more fogiving.
 		// MAYBE: remove this, if performace becomes a concern.
-		let path = if path.ends_with('/') {
-			&path[..path.len() - 1]
+		let path = if let Some(path) = path.strip_suffix('/') {
+			path
 		} else {
 			path
 		};
@@ -340,6 +354,7 @@ impl SqPackIndex {
 			.map(IndexEntry::from)
 	}
 
+	#[must_use]
 	pub fn find_folder_entry_info_from_hash(&self, hash: u32) -> Option<FolderEntryInfo> {
 		self.folder_entries
 			.iter()
@@ -347,6 +362,7 @@ impl SqPackIndex {
 			.map(|entry| FolderEntryInfo::new(self, entry))
 	}
 
+	#[must_use]
 	pub fn find_entry_from_offset(&self, offset: u64) -> Option<Hash> {
 		if let Some(entry) = self.entries.iter().find(|s| s.data.offset == offset) {
 			return Some(entry.hash);

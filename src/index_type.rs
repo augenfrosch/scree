@@ -57,24 +57,24 @@ impl Display for IndexInfo {
 #[derive(Debug, Clone, PartialEq, Eq, strum::Display)]
 pub enum ParseIndexInfoError {
 	#[strum(to_string = "Invalid format")]
-	InvalidFormat,
+	FormatInvalid,
 	#[strum(to_string = "Invalid category")]
-	InvalidCategory,
+	CategoryInvalid,
 	#[strum(to_string = "Invalid part: {0}")]
-	InvalidInteger(ParseIntError),
+	IntegerPartParsingError(ParseIntError),
 	#[strum(to_string = "Invalid part: {0}")]
-	InvalidPart(ParseEnumError),
+	PartParsingError(ParseEnumError),
 }
 
 impl From<ParseEnumError> for ParseIndexInfoError {
 	fn from(err: ParseEnumError) -> Self {
-		Self::InvalidPart(err)
+		Self::PartParsingError(err)
 	}
 }
 
 impl From<ParseIntError> for ParseIndexInfoError {
 	fn from(err: ParseIntError) -> Self {
-		Self::InvalidInteger(err)
+		Self::IntegerPartParsingError(err)
 	}
 }
 
@@ -85,14 +85,14 @@ impl FromStr for IndexInfo {
 
 	fn from_str(s: &str) -> Result<Self, Self::Err> {
 		let Some((index_name, platform)) = s.split_once('.') else {
-			return Err(ParseIndexInfoError::InvalidFormat);
+			return Err(ParseIndexInfoError::FormatInvalid);
 		};
 		if index_name.len() == 6
 			&& let (Some(category), Some(repository_type), Some(chunk)) =
 				(s.get(0..2), s.get(2..4), s.get(4..6))
 		{
 			let category = Category::from_repr(u8::from_str_radix(category, 16)?)
-				.ok_or(ParseIndexInfoError::InvalidCategory)?;
+				.ok_or(ParseIndexInfoError::CategoryInvalid)?;
 			let repository_type = RepositoryType::from(u8::from_str_radix(repository_type, 16)?);
 			let chunk = u8::from_str_radix(chunk, 16)?;
 			let platform = platform.parse()?;
@@ -103,7 +103,7 @@ impl FromStr for IndexInfo {
 				platform,
 			})
 		} else {
-			Err(ParseIndexInfoError::InvalidFormat)
+			Err(ParseIndexInfoError::FormatInvalid)
 		}
 	}
 }
@@ -133,6 +133,10 @@ impl From<ParseIndexInfoError> for IndexClassificationError {
 
 impl Error for IndexClassificationError {}
 
+/// Classifies the path to an index file by the info contained in the filename.
+///
+/// # Errors
+/// Returns an [`IndexClassificationError`] if the path is invalid or parsing of its components fails.
 pub fn classify_index_path(
 	path: impl AsRef<Path>,
 ) -> Result<(IndexInfo, IndexType), IndexClassificationError> {
@@ -232,25 +236,25 @@ mod test {
 	fn test_parse_index_info_error() {
 		assert_eq!(
 			"AAAA".parse::<IndexInfo>(),
-			Err(ParseIndexInfoError::InvalidFormat)
+			Err(ParseIndexInfoError::FormatInvalid)
 		);
 		assert_eq!(
 			"000.win32".parse::<IndexInfo>(),
-			Err(ParseIndexInfoError::InvalidFormat)
+			Err(ParseIndexInfoError::FormatInvalid)
 		);
 		assert_eq!(
 			"0f0000.win32".parse::<IndexInfo>(),
-			Err(ParseIndexInfoError::InvalidCategory)
+			Err(ParseIndexInfoError::CategoryInvalid)
 		);
 		assert_parse_error_matches_expr!(
 			"02040z.win32"->IndexInfo,
-			ParseIndexInfoError::InvalidInteger(parse_int_error) => {
+			ParseIndexInfoError::IntegerPartParsingError(parse_int_error) => {
 				assert_eq!(*parse_int_error.kind(), IntErrorKind::InvalidDigit);
 			},
 		);
 		assert_parse_error_matches_expr!(
 			"020409.win3"->IndexInfo,
-			ParseIndexInfoError::InvalidPart(ParseEnumError(part)) => {
+			ParseIndexInfoError::PartParsingError(ParseEnumError(part)) => {
 				assert_eq!(part, "win3");
 			},
 		);

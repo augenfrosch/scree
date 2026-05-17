@@ -8,7 +8,7 @@ use crate::common::Platform;
 mod index;
 pub use index::{FolderEntryInfo, Hash, IndexEntry, IndexType, SqPackIndex};
 
-/// The type of this SqPack file.
+/// The type of this `SqPack` file.
 #[binrw]
 #[brw(repr = u32)]
 #[derive(Debug, Clone, Copy)]
