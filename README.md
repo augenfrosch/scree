@@ -1,8 +1,8 @@
 # scree
-Experimental library, directly based on parts of [Physis](https://github.com/redstrate/Physis) and in addition to referencing [ironworks](https://github.com/ackwell/ironworks), that currently only supports checking for the existance of files and folders in FFXIV's SqPack files.
+Experimental library, directly based on parts of [Physis](https://github.com/redstrate/Physis) and in addition to referencing [ironworks](https://github.com/ackwell/ironworks), that currently only supports checking for the existence of files and folders in FFXIV's SqPack files.
 
 > [!IMPORTANT]
-> For most use cases using [Physis](https://github.com/redstrate/Physis) or [ironworks](https://github.com/ackwell/ironworks/tree/main). Due to `scree`'s experimental status it is lacking a ton of features, in addition to stability & testing.
+> For most use cases using [Physis](https://github.com/redstrate/Physis) or [ironworks](https://github.com/ackwell/ironworks/tree/main) would be recommended. Due to `scree`'s experimental status it is lacking a ton of features, in addition to stability & testing.
 
 # Building
 The [Rust](https://rust-lang.org/) toolchain is required for building. The minimal supported Rust version (MSRV) is `1.95`.
