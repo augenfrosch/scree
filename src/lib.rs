@@ -184,12 +184,14 @@ impl Repository {
 				physis_re_exports::sqpack::Hash::FullPath(_) => unreachable!(
 					"Malformed index, indexes of type `.index` must not have full-path hashes"
 				),
-			}) || !index2.entries.is_sorted_by_key(|entry| match entry.hash {
-				physis_re_exports::sqpack::Hash::SplitPath { .. } => unreachable!(
-					"Malformed index, indexes of type `.index2` must not have split-path hashes"
-				),
-				physis_re_exports::sqpack::Hash::FullPath(hash) => hash,
-			}) {
+			}) || !index.folder_entries.is_sorted_by_key(|entry| entry.hash)
+				|| !index2.entries.is_sorted_by_key(|entry| match entry.hash {
+					physis_re_exports::sqpack::Hash::SplitPath { .. } => unreachable!(
+						"Malformed index, indexes of type `.index2` must not have split-path hashes"
+					),
+					physis_re_exports::sqpack::Hash::FullPath(hash) => hash,
+				}) || !index2.folder_entries.is_sorted_by_key(|entry| entry.hash)
+			{
 				return Err(LoadRepositoryError::IndexEntriesNotSorted);
 			}
 
