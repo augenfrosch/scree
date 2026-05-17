@@ -1,5 +1,7 @@
 // SPDX-FileCopyrightText: 2023 Joshua Goins <josh@redstrate.com>
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Modified for `scree` by augenfrosch, 
+// starting 2026-05-16, from commit d9ab40fc2405bae3822986bd57691b7702c3b80f
 
 use binrw::binrw;
 
